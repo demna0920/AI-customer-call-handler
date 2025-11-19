@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, send_from_directory
 import os
 from dotenv import load_dotenv
 import whisper
@@ -8,6 +8,7 @@ import google.generativeai as genai
 import json
 import logging
 from datetime import datetime
+import sqlite3
 
 # Twilio imports for real-time processing
 from twilio.twiml.voice_response import VoiceResponse
@@ -18,6 +19,7 @@ from audio_stream_processor import AudioStreamProcessor
 from ai_response_generator import AIResponseGenerator
 from tts_handler import TTSHandler
 from simple_reservation_handler import SimpleReservationHandler
+from utils.fallback_extraction import extract_reservation_info_fallback
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +28,7 @@ logger = logging.getLogger(__name__)
 # .env 파일 로드
 load_dotenv()
 
-# Flask 앱 생성 (이 부분이 빠졌었네요!)
+# Flask 앱 생성
 app = Flask(__name__)
 
 # Google Gemini API 키 설정
@@ -50,9 +52,9 @@ tts_handler = TTSHandler()
 simple_reservation_handler = SimpleReservationHandler()
 
 # Whisper 모델 로드
-print("🔄 Loading Whisper model...")
+print("Loading Whisper model...")
 model = whisper.load_model("base")
-print("✅ Whisper model loaded successfully!")
+print("Whisper model loaded successfully!")
 
 # 오디오 파일 변환
 def convert_audio(file_path):
@@ -136,6 +138,7 @@ def extract_reservation_info(text):
     try:
         prompt = f"""
         Please extract the name, date, and time from the customer's message.
+        For the name: Extract the customer's actual name, ignoring filler words like "uh", "um", "like", "well", etc. The name should be the person's proper name (e.g., if they say "Uh, my name is John", extract "John").
         For relative dates like "tomorrow", "next week", "this weekend", etc., convert them to specific dates.
         For times mentioned in natural language like "3 o'clock", "in the afternoon", "evening", etc., convert them to 24-hour format.
         Today's date is {datetime.now().strftime("%Y-%m-%d")}. Use this as a reference for relative dates.
@@ -174,107 +177,6 @@ def extract_reservation_info(text):
         # 오류 시 기본값 반환
         return extract_reservation_info_fallback(text)
 
-# Fallback function for when Google API is not available
-def extract_reservation_info_fallback(text):
-    """Simple text-based extraction as fallback"""
-    text_lower = text.lower()
-
-    # Default values
-    name = ""
-    date = ""
-    time = ""
-
-    # Try to extract name (look for common name patterns)
-    words = text.split()
-    for i, word in enumerate(words):
-        # Look for patterns like "my name is" or "I'm"
-        if word in ["name", "i'm", "im"] and i < len(words) - 1:
-            if word == "name" and i < len(words) - 2 and words[i+1] in ["is", "am"]:
-                name = " ".join(words[i+2:i+4])  # Take next 2 words
-            elif word in ["i'm", "im"]:
-                name = " ".join(words[i+1:i+3])  # Take next 2 words
-            break
-
-    # Try to extract date using our conversion function
-    # For simplicity in fallback, we'll just handle basic cases
-    if "tomorrow" in text_lower:
-        from datetime import timedelta
-        tomorrow = datetime.now() + timedelta(days=1)
-        date = tomorrow.strftime("%Y-%m-%d")
-    elif "today" in text_lower:
-        date = datetime.now().strftime("%Y-%m-%d")
-
-    # Try to extract time using our conversion function
-    def convert_time_format_fallback(time_str):
-        if not time_str:
-            return None
-        
-        text_lower = time_str.lower()
-        
-        # Handle common time expressions
-        if "morning" in text_lower:
-            return "11:00"
-        elif "afternoon" in text_lower:
-            return "15:00"
-        elif "evening" in text_lower or "night" in text_lower:
-            return "19:00"
-        elif "lunch" in text_lower:
-            return "13:00"
-        elif "dinner" in text_lower:
-            return "19:00"
-        elif "breakfast" in text_lower:
-            return "09:00"
-        elif "o'clock" in text_lower:
-            # Handle expressions like "3 o'clock", "seven o'clock"
-            import re
-            match = re.search(r"(\d+)(?:\s+o'clock)?", text_lower)
-            if match:
-                hour = int(match.group(1))
-                if 1 <= hour <= 12:
-                    # Assume afternoon/evening for hours 1-6, morning for 7-12
-                    if 1 <= hour <= 6:
-                        return f"{hour + 12:02d}:00"
-                    else:
-                        return f"{hour:02d}:00"
-        elif "p.m." in text_lower or "pm" in text_lower:
-            # Handle expressions like "7 p.m.", "7pm"
-            import re
-            match = re.search(r"(\d+)(?:\s*(?:p\.m\.|pm))?", text_lower)
-            if match:
-                hour = int(match.group(1))
-                if 1 <= hour <= 12:
-                    # Convert to 24-hour format
-                    if hour != 12:
-                        return f"{hour + 12:02d}:00"
-                    else:
-                        return "12:00"
-        elif "a.m." in text_lower or "am" in text_lower:
-            # Handle expressions like "7 a.m.", "7am"
-            import re
-            match = re.search(r"(\d+)(?:\s*(?:a\.m\.|am))?", text_lower)
-            if match:
-                hour = int(match.group(1))
-                if 1 <= hour <= 12:
-                    # Convert to 24-hour format
-                    if hour == 12:
-                        return "00:00"
-                    else:
-                        return f"{hour:02d}:00"
-        
-        return None  # Invalid time format
-
-    # Try to extract time using our conversion function
-    converted_time = convert_time_format_fallback(text)
-    if converted_time:
-        time = converted_time
-
-    logger.info(f"📋 Fallback extraction - Name: {name}, Date: {date}, Time: {time}")
-    return {
-        "name": name if name else "Customer",
-        "date": date if date else datetime.now().strftime("%Y-%m-%d"),
-        "time": time if time else "19:00"
-    }
-
 # Google Gemini로 정보 증분 추출 (with fallback)
 def extract_reservation_info_incremental(text_segment, accumulated_text=""):
     """
@@ -290,6 +192,7 @@ def extract_reservation_info_incremental(text_segment, accumulated_text=""):
     try:
         prompt = f"""
         Please extract the name, date, and time from the customer's message.
+        For the name: Extract the customer's actual name, ignoring filler words like "uh", "um", "like", "well", etc. The name should be the person's proper name (e.g., if they say "Uh, my name is John", extract "John").
         For relative dates like "tomorrow", "next week", "this weekend", etc., convert them to specific dates.
         For times mentioned in natural language like "3 o'clock", "in the afternoon", "evening", etc., convert them to 24-hour format.
         Today's date is {datetime.now().strftime("%Y-%m-%d")}. Use this as a reference for relative dates.
@@ -679,14 +582,23 @@ def call_status():
     call_sid = request.values.get('CallSid')
     call_status = request.values.get('CallStatus', '')
     call_duration = request.values.get('CallDuration', '')
-    
+
     logger.info(f"Call {call_sid} status: {call_status}, duration: {call_duration}")
-    
+
     # Update call state with status
     call_state_manager.update_call_status(call_sid, call_status, call_duration)
-    
+
     # Return empty response
     return '', 200
+
+# 🎵 Serve audio files
+@app.route("/audio/<filename>")
+def serve_audio(filename):
+    """Serve generated audio files"""
+    try:
+        return send_from_directory('audio_files', filename)
+    except FileNotFoundError:
+        return "Audio file not found", 404
 
 # 📊 Early Disconnection Statistics
 @app.route("/stats/early-disconnections")
@@ -735,108 +647,10 @@ def database_view():
             # Get today's reservations using the database method
             todays_reservations = db.get_todays_reservations()
         
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>📊 Reservation Database Visualization</title>
-            <meta charset="utf-8">
-            <style>
-                body {{ font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
-                .container {{ background: white; border-radius: 10px; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
-                h1, h2 {{ color: #d32f2f; }}
-                table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-                th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-                th {{ background-color: #d32f2f; color: white; }}
-                tr:hover {{ background-color: #f5f5f5; }}
-                .section {{ margin: 30px 0; }}
-                .back-link {{ display: inline-block; margin-bottom: 20px; color: #d32f2f; text-decoration: none; }}
-                .back-link:hover {{ text-decoration: underline; }}
-                .stats {{ display: flex; justify-content: space-around; margin: 20px 0; }}
-                .stat-box {{ background: #d32f2f; color: white; padding: 20px; border-radius: 10px; text-align: center; }}
-                .stat-number {{ font-size: 2em; font-weight: bold; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>📊 Korean BBQ House London - Database Visualization</h1>
-                <a href="/" class="back-link">← Back to Main Page</a>
-                
-                <div class="stats">
-                    <div class="stat-box">
-                        <div class="stat-number">{len(customers)}</div>
-                        <div>Total Customers</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number">{len(reservations)}</div>
-                        <div>Total Reservations</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number">{len(todays_reservations)}</div>
-                        <div>Today's Reservations</div>
-                    </div>
-                </div>
-                
-                <div class="section">
-                    <h2>👥 Customers</h2>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Name</th>
-                                <th>Phone</th>
-                                <th>Email</th>
-                                <th>Created At</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {''.join([f"<tr><td>{c[0]}</td><td>{c[1]}</td><td>{c[2] or '-'}</td><td>{c[3] or '-'}</td><td>{c[4]}</td></tr>" for c in customers])}
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div class="section">
-                    <h2>📅 Today's Reservations</h2>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Customer</th>
-                                <th>Date</th>
-                                <th>Time</th>
-                                <th>Party Size</th>
-                                <th>Special Requests</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {''.join([f"<tr><td>{r['id']}</td><td>{r['customer_name']}</td><td>{r['date']}</td><td>{r['time']}</td><td>{r['party_size']}</td><td>{r['special_requests'] or '-'}</td></tr>" for r in todays_reservations]) if todays_reservations else "<tr><td colspan='6'>No reservations for today</td></tr>"}
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div class="section">
-                    <h2>📅 All Reservations</h2>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Customer</th>
-                                <th>Date</th>
-                                <th>Time</th>
-                                <th>Party Size</th>
-                                <th>Special Requests</th>
-                                <th>Created At</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {''.join([f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td>{r[4]}</td><td>{r[5] or '-'}</td><td>{r[6]}</td></tr>" for r in reservations])}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        return render_template('database.html', 
+                             customers=customers, 
+                             reservations=reservations, 
+                             todays_reservations=todays_reservations)
     except Exception as e:
         logger.error(f"Error displaying database: {e}")
         return f"""
@@ -961,22 +775,10 @@ def index():
                 .catch(error => {
                     resultDiv.innerHTML = `<p style="color:red;">❌ Error: ${error}</p>`;
                 });
-            });
-        </script>
-    </body>
+            </script>
+        </body>
     </html>
     """
-
-# Serve audio files
-@app.route("/audio/<filename>")
-def serve_audio(filename):
-    """Serve generated audio files"""
-    try:
-        from flask import send_from_directory
-        return send_from_directory('audio_files', filename)
-    except Exception as e:
-        logger.error(f"Error serving audio file {filename}: {e}")
-        return "Audio file not found", 404
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
