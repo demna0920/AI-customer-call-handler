@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>📊 Reservation Database Visualization</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #d32f2f; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #d32f2f; color: white; }
+        tr:hover { background-color: #f5f5f5; }
+        .section { margin: 30px 0; }
+        .back-link { display: inline-block; margin-bottom: 20px; color: #d32f2f; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+        .stats { display: flex; justify-content: space-around; margin: 20px 0; }
+        .stat-box { background: #d32f2f; color: white; padding: 20px; border-radius: 10px; text-align: center; }
+        .stat-number { font-size: 2em; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Back to Main Page</a>
+        <h1>📊 Korean BBQ House London - Database Visualization</h1>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-number">{{ customers|length }}</div>
+                <div>Total Customers</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{{ reservations|length }}</div>
+                <div>Total Reservations</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{{ todays_reservations|length }}</div>
+                <div>Today's Reservations</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>👥 Customers</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in customers %}
+                    <tr>
+                        <td>{{ c[0] }}</td>
+                        <td>{{ c[1] }}</td>
+                        <td>{{ c[2] or '-' }}</td>
+                        <td>{{ c[3] or '-' }}</td>
+                        <td>{{ c[4] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>📅 Today's Reservations</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Customer</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Party Size</th>
+                        <th>Special Requests</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if todays_reservations %}
+                        {% for r in todays_reservations %}
+                        <tr>
+                            <td>{{ r.id }}</td>
+                            <td>{{ r.customer_name }}</td>
+                            <td>{{ r.date }}</td>
+                            <td>{{ r.time }}</td>
+                            <td>{{ r.party_size }}</td>
+                            <td>{{ r.special_requests or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="6">No reservations for today</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>📅 All Reservations</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Customer</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Party Size</th>
+                        <th>Special Requests</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in reservations %}
+                    <tr>
+                        <td>{{ r[0] }}</td>
+                        <td>{{ r[1] }}</td>
+                        <td>{{ r[2] }}</td>
+                        <td>{{ r[3] }}</td>
+                        <td>{{ r[4] }}</td>
+                        <td>{{ r[5] or '-' }}</td>
+                        <td>{{ r[6] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

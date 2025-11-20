@@ -6,7 +6,7 @@ Simplified Flask app for database visualization only
 from flask import Flask, render_template_string
 import sqlite3
 import os
-from database import ReservationDatabase
+from database import db
 import logging
 
 # Configure logging
@@ -21,12 +21,10 @@ app = Flask(__name__)
 def database_view():
     """Display database contents in a web interface"""
     try:
-        db = ReservationDatabase()
-        
         # Get all customers
         with sqlite3.connect("reservations.db") as conn:
             cursor = conn.cursor()
-            
+
             # Get customers
             cursor.execute('''
                 SELECT id, name, phone, email, created_at
@@ -34,20 +32,20 @@ def database_view():
                 ORDER BY created_at DESC
             ''')
             customers = cursor.fetchall()
-            
+
             # Get reservations
             cursor.execute('''
-                SELECT r.id, c.name, r.reservation_date, r.reservation_time, 
+                SELECT r.id, c.name, r.reservation_date, r.reservation_time,
                        r.party_size, r.special_requests, r.created_at
                 FROM reservations r
                 JOIN customers c ON r.customer_id = c.id
                 ORDER BY r.reservation_date DESC, r.reservation_time DESC
             ''')
             reservations = cursor.fetchall()
-            
+
             # Get today's reservations using the database method
             todays_reservations = db.get_todays_reservations()
-        
+
         return f"""
         <!DOCTYPE html>
         <html>
@@ -73,7 +71,7 @@ def database_view():
         <body>
             <div class="container">
                 <h1>📊 Korean BBQ House London - Database Visualization</h1>
-                
+
                 <div class="stats">
                     <div class="stat-box">
                         <div class="stat-number">{len(customers)}</div>
@@ -88,7 +86,7 @@ def database_view():
                         <div>Today's Reservations</div>
                     </div>
                 </div>
-                
+
                 <div class="section">
                     <h2>👥 Customers</h2>
                     <table>
@@ -106,7 +104,7 @@ def database_view():
                         </tbody>
                     </table>
                 </div>
-                
+
                 <div class="section">
                     <h2>📅 Today's Reservations</h2>
                     <table>
@@ -125,7 +123,7 @@ def database_view():
                         </tbody>
                     </table>
                 </div>
-                
+
                 <div class="section">
                     <h2>📅 All Reservations</h2>
                     <table>

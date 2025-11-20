@@ -104,6 +104,16 @@ class SimpleReservationHandler:
             str: Extracted name
         """
         text = name_text.strip()
+        
+        # Remove common filler words
+        filler_words = ["uh", "um", "ah", "er", "like", "so", "actually"]
+        for filler in filler_words:
+            # Remove filler words at start
+            if text.lower().startswith(f"{filler} "):
+                text = text[len(filler)+1:]
+            # Remove filler words in middle (simplified)
+            text = text.replace(f" {filler} ", " ")
+            
         text_lower = text.lower()
         
         # Handle common name introduction patterns
@@ -325,6 +335,15 @@ class SimpleReservationHandler:
             bool: True if saved successfully
         """
         try:
+            # Check for duplicates first
+            if self.db.check_duplicate_reservation(
+                session_data["name"],
+                session_data["date"],
+                session_data["time"]
+            ):
+                logger.info(f"Duplicate reservation detected for {session_data['name']} on {session_data['date']} at {session_data['time']}")
+                return True  # Return success to be idempotent
+                
             # Create customer record
             customer_id = self.db.create_customer(session_data["name"])
             

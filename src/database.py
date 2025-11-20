@@ -16,8 +16,10 @@ logger = logging.getLogger(__name__)
 class ReservationDatabase:
     """Handles database operations for reservations and customers"""
     
-    def __init__(self, db_path: str = "reservations.db"):
+    def __init__(self, db_path: str = None):
         """Initialize the database connection and create tables if they don't exist"""
+        if db_path is None:
+            db_path = os.path.join(os.path.dirname(__file__), "reservations.db")
         self.db_path = db_path
         self.init_database()
     
@@ -203,7 +205,32 @@ class ReservationDatabase:
         except Exception as e:
             logger.error(f"Error creating reservation: {e}")
             raise
-    
+    def check_duplicate_reservation(self, name: str, date: str, time: str) -> bool:
+        """
+        Check if a reservation already exists for the given name, date, and time
+        
+        Args:
+            name (str): Customer name
+            date (str): Reservation date (YYYY-MM-DD)
+            time (str): Reservation time (HH:MM)
+            
+        Returns:
+            bool: True if duplicate exists, False otherwise
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*)
+                    FROM reservations r
+                    JOIN customers c ON r.customer_id = c.id
+                    WHERE c.name = ? AND r.reservation_date = ? AND r.reservation_time = ?
+                ''', (name, date, time))
+                count = cursor.fetchone()[0]
+                return count > 0
+        except Exception as e:
+            logger.error(f"Error checking duplicate reservation: {e}")
+            return False
     def get_todays_reservations(self) -> list:
         """
         Get all reservations for today

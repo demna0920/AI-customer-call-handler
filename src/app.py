@@ -230,13 +230,35 @@ def extract_reservation_info_incremental(text_segment, accumulated_text=""):
         # 오류 시 기본값 반환
         return extract_reservation_info_fallback(full_text)
 
+# Name cleaning helper
+def clean_name(name_text):
+    if not name_text:
+        return ""
+    
+    text = name_text.strip()
+    
+    # Remove common filler words
+    filler_words = ["uh", "um", "ah", "er", "like", "so", "actually"]
+    for filler in filler_words:
+        # Remove filler words at start
+        if text.lower().startswith(f"{filler} "):
+            text = text[len(filler)+1:]
+        # Remove filler words in middle (simplified)
+        text = text.replace(f" {filler} ", " ")
+    
+    # Remove punctuation
+    text = text.rstrip('.,!?;:')
+    
+    return text.title()
+
 # 예약 정보 저장
 def save_reservation(data):
     try:
         from database import db
         
         # Extract reservation data
-        name = data.get("name", "")
+        raw_name = data.get("name", "")
+        name = clean_name(raw_name) # Clean the name
         date = data.get("date", "")
         time = data.get("time", "")
         party_size = data.get("party_size", 2)
@@ -245,6 +267,11 @@ def save_reservation(data):
         if not name or not date or not time:
             logger.error("Missing required reservation data")
             return False
+            
+        # Check for duplicates
+        if db.check_duplicate_reservation(name, date, time):
+            logger.info(f"Duplicate reservation detected for {name} on {date} at {time}")
+            return True  # Return success to be idempotent
         
         # Check if customer already exists
         customer = db.get_customer_by_name(name)
@@ -619,8 +646,8 @@ def early_disconnection_stats():
 def database_view():
     """Display database contents in a web interface"""
     try:
-        from database import ReservationDatabase
-        db = ReservationDatabase()
+        from database import db
+        
         
         # Get all customers
         with sqlite3.connect("reservations.db") as conn:
