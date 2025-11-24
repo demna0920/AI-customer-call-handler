@@ -169,16 +169,5 @@ class AudioStreamProcessor:
         return True
     
     def _create_empty_response(self):
-        """
-        Create an empty TwiML response
-        
-        Returns:
-            str: Empty TwiML response
-        """
+        """Create an empty TwiML response"""
         return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
-
-# Example usage
-if __name__ == "__main__":
-    # This is just for testing purposes
-    processor = AudioStreamProcessor()
-    print("Audio Stream Processor initialized")

@@ -11,7 +11,7 @@ from datetime import datetime
 import sqlite3
 
 # Twilio imports for real-time processing
-from twilio.twiml.voice_response import VoiceResponse
+
 
 # Import new modules for real-time processing
 from call_state import CallStateManager
@@ -19,7 +19,7 @@ from audio_stream_processor import AudioStreamProcessor
 from ai_response_generator import AIResponseGenerator
 from tts_handler import TTSHandler
 from simple_reservation_handler import SimpleReservationHandler
-from utils.fallback_extraction import extract_reservation_info_fallback
+from utils.fallback_extraction import extract_reservation_info_fallback, clean_name
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -71,50 +71,9 @@ def convert_audio(file_path):
         logger.error(f"Audio conversion error: {e}")
         return None
 
-# 오디오 스트림 변환
-def convert_audio_stream(audio_data, format="mulaw"):
-    try:
-        # Create temporary file for incoming audio data
-        temp_audio = tempfile.NamedTemporaryFile(suffix='.raw', delete=False)
-        temp_audio.write(audio_data)
-        temp_audio.close()
-        
-        # Convert to WAV format
-        temp_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        temp_wav.close()
-        
-        # Handle different audio formats from Twilio
-        if format == "mulaw":
-            sound = AudioSegment.from_file(temp_audio.name, format="raw", frame_rate=8000, channels=1, sample_width=1)
-            sound = sound.set_frame_rate(16000).set_channels(1)
-        else:
-            sound = AudioSegment.from_file(temp_audio.name)
-            sound = sound.set_frame_rate(16000).set_channels(1)
-        
-        sound.export(temp_wav.name, format="wav")
-        
-        # Clean up temporary raw audio file
-        os.unlink(temp_audio.name)
-        
-        return temp_wav.name
-    except Exception as e:
-        logger.error(f"Audio stream conversion error: {e}")
-        return None
 
-# Whisper로 실시간 음성 인식
-def transcribe_audio_stream(file_path, previous_context=""):
-    try:
-        logger.info("📝 Transcribing audio stream with Whisper...")
-        result = model.transcribe(file_path, language="en")
-        text = result["text"].strip()
-        
-        # Combine with previous context for better accuracy
-        full_text = previous_context + " " + text if previous_context else text
-        logger.info(f"🗣️ Transcribed text: {text}")
-        return full_text
-    except Exception as e:
-        logger.error(f"Whisper transcription error: {e}")
-        return ""
+
+
 
 # Whisper로 음성 인식
 def transcribe_audio(file_path):
@@ -177,79 +136,9 @@ def extract_reservation_info(text):
         # 오류 시 기본값 반환
         return extract_reservation_info_fallback(text)
 
-# Google Gemini로 정보 증분 추출 (with fallback)
-def extract_reservation_info_incremental(text_segment, accumulated_text=""):
-    """
-    Extract reservation info from text segment, with option to accumulate context
-    """
-    full_text = accumulated_text + " " + text_segment if accumulated_text else text_segment
 
-    if not GOOGLE_API_KEY or genai is None:
-        # API 키가 없을 때 간단한 텍스트 분석으로 대체
-        logger.info("🔄 Using fallback incremental extraction (no Google API key)")
-        return extract_reservation_info_fallback(full_text)
 
-    try:
-        prompt = f"""
-        Please extract the name, date, and time from the customer's message.
-        For the name: Extract the customer's actual name, ignoring filler words like "uh", "um", "like", "well", etc. The name should be the person's proper name (e.g., if they say "Uh, my name is John", extract "John").
-        For relative dates like "tomorrow", "next week", "this weekend", etc., convert them to specific dates.
-        For times mentioned in natural language like "3 o'clock", "in the afternoon", "evening", etc., convert them to 24-hour format.
-        Today's date is {datetime.now().strftime("%Y-%m-%d")}. Use this as a reference for relative dates.
-        Conversation so far: "{full_text}"
 
-        Return the result in the following JSON format only. Do not include any other text.
-
-        {{
-          "name": "John Doe",
-          "date": "2024-03-15",
-          "time": "15:00"
-        }}
-        """
-
-        logger.info("🧠 Extracting incremental information with Google Gemini...")
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        response = model.generate_content(prompt)
-        result = response.text.strip()
-        logger.info(f"📋 Extracted information: {result}")
-
-        # Remove markdown code block formatting if present
-        if result.startswith("```json"):
-            result = result[7:]  # Remove ```json
-        if result.startswith("```"):
-            result = result[3:]  # Remove ```
-        if result.endswith("```"):
-            result = result[:-3]  # Remove ```
-
-        # Clean up any extra whitespace
-        result = result.strip()
-
-        return json.loads(result)
-    except Exception as e:
-        logger.error(f"Gemini incremental extraction error: {e}")
-        # 오류 시 기본값 반환
-        return extract_reservation_info_fallback(full_text)
-
-# Name cleaning helper
-def clean_name(name_text):
-    if not name_text:
-        return ""
-    
-    text = name_text.strip()
-    
-    # Remove common filler words
-    filler_words = ["uh", "um", "ah", "er", "like", "so", "actually"]
-    for filler in filler_words:
-        # Remove filler words at start
-        if text.lower().startswith(f"{filler} "):
-            text = text[len(filler)+1:]
-        # Remove filler words in middle (simplified)
-        text = text.replace(f" {filler} ", " ")
-    
-    # Remove punctuation
-    text = text.rstrip('.,!?;:')
-    
-    return text.title()
 
 # 예약 정보 저장
 def save_reservation(data):
@@ -298,15 +187,6 @@ def save_reservation(data):
         logger.error(f"Reservation save error: {e}")
         return False
 
-# 예약 정보 업데이트 (CSV에서는 사용하지 않음)
-def update_reservation(sheet, row_index, data):
-    # CSV에서는 별도의 업데이트 기능이 필요하지 않음
-    return True
-
-# 예약 정보 저장 또는 업데이트
-def save_or_update_reservation(data, call_sid=None):
-    # CSV 저장 방식으로 변경
-    return save_reservation(data)
 
 # 🎯 메인 테스트 엔드포인트
 @app.route("/test-reservation", methods=["POST"])
@@ -422,7 +302,11 @@ def gather_input():
                     response_text = "What date would you like to make your reservation?"
                 elif call_state.reservation_session["step"] == 2:
                     # We already have name and are at date step
-                    response_text = "What date would you like to make your reservation?"
+                    if call_state.reservation_session.get("date"):
+                         call_state.reservation_session["step"] = 3
+                         response_text = "What time would you prefer for your reservation?"
+                    else:
+                         response_text = "What date would you like to make your reservation?"
                 elif call_state.reservation_session["step"] == 3:
                     # We already have name and date, asking for time
                     response_text = "What time would you prefer for your reservation?"

@@ -387,13 +387,3 @@ class AIResponseGenerator:
     def generate_reservation_reminder(self):
         """Generate reservation reminder"""
         return self.templates["reservation_reminder"]
-
-# Example usage
-if __name__ == "__main__":
-    # This is just for testing purposes
-    generator = AIResponseGenerator()
-    print("AI Response Generator initialized")
-    
-    # Test generating a greeting
-    greeting = generator.generate_greeting()
-    print(f"Greeting: {greeting}")
